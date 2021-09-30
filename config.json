@@ -1,0 +1,19 @@
+{
+  "kafka": {
+    "servers": [""],
+    "topics": ["metrics"],
+    "groupId": "metrics",
+    "auth": {
+      "instanceId": "",
+      "userName":"",
+      "password": ""
+    }
+  },
+  "exemplars": {
+    "port": 8000,
+    "enable": true,
+    "maxExemplars": 10000
+  },
+
+  "remoteUrl": ""
+}
