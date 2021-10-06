@@ -22,8 +22,60 @@ git clone https://github.com/edenhill/librdkafka.gitcd librdkafka./configuremake
 只需将metrics使用`proto.Marshal`编码到`promWR`即可:
 
 ```golang
-func (c *client) WriteRaw(    ctx context.Context,    promWR []byte,    opts WriteOptions,) (WriteResult, WriteError) {    var result WriteResult    encoded := snappy.Encode(nil, promWR)    body := bytes.NewReader(encoded)    req, err := http.NewRequest("POST", c.writeURL, body)    if err != nil {        return result, writeError{err: err}    }    req.Header.Set("Content-Type", "application/x-protobuf")    req.Header.Set("Content-Encoding", "snappy")    req.Header.Set("User-Agent", c.userAgent)    req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")    if opts.Headers != nil {        for k, v := range opts.Headers {            req.Header.Set(k, v)        }    }    resp, err := c.httpClient.Do(req.WithContext(ctx))    if err != nil {        return result, writeError{err: err}    }    result.StatusCode = resp.StatusCode    defer resp.Body.Close()    if result.StatusCode/100 != 2 {        writeErr := writeError{            err:  fmt.Errorf("expected HTTP 200 status code: actual=%d", resp.StatusCode),            code: result.StatusCode,        }        body, err := ioutil.ReadAll(resp.Body)        if err != nil {            writeErr.err = fmt.Errorf("%v, body_read_error=%s", writeErr.err, err)            return result, writeErr        }        writeErr.err = fmt.Errorf("%v, body=%s", writeErr.err, body)        return result, writeErr    }    return result, nil}
+func (c *client) WriteRaw(
+    ctx context.Context,
+    promWR []byte,
+    opts WriteOptions,
+) (WriteResult, WriteError) {
+    var result WriteResult
+    encoded := snappy.Encode(nil, promWR)
+
+    body := bytes.NewReader(encoded)
+    req, err := http.NewRequest("POST", c.writeURL, body)
+    if err != nil {
+        return result, writeError{err: err}
+    }
+
+    req.Header.Set("Content-Type", "application/x-protobuf")
+    req.Header.Set("Content-Encoding", "snappy")
+    req.Header.Set("User-Agent", c.userAgent)
+    req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+    if opts.Headers != nil {
+        for k, v := range opts.Headers {
+            req.Header.Set(k, v)
+        }
+    }
+
+    resp, err := c.httpClient.Do(req.WithContext(ctx))
+    if err != nil {
+        return result, writeError{err: err}
+    }
+
+    result.StatusCode = resp.StatusCode
+
+    defer resp.Body.Close()
+
+    if result.StatusCode/100 != 2 {
+        writeErr := writeError{
+            err:  fmt.Errorf("expected HTTP 200 status code: actual=%d", resp.StatusCode),
+            code: result.StatusCode,
+        }
+
+        body, err := ioutil.ReadAll(resp.Body)
+        if err != nil {
+            writeErr.err = fmt.Errorf("%v, body_read_error=%s", writeErr.err, err)
+            return result, writeErr
+        }
+
+        writeErr.err = fmt.Errorf("%v, body=%s", writeErr.err, body)
+        return result, writeErr
+    }
+
+    return result, nil
+}
 ```
+
+### 
 
 ### metric的查询
 
@@ -40,8 +92,31 @@ RUN apk add git && apk add librdkafka-dev pkgconf && apk add build-base && apk a
 由于上述lib的安装比较满，为了加快安装，可以将安装了这些lib的镜像作为基础镜像。
 
 ```dockerfile
-FROM golang:1.16.8-alpine3.14 as buildWORKDIR /appRUN apk add git && apk add librdkafka-dev pkgconf && apk add build-base && apk add alpine-sdkENV http_proxy= GO111MODULE=on GOPROXY=https://goproxy.cn,direct GOPRIVATE=*.weimob.comCOPY go.mod .COPY go.sum .COPY . .RUN cd cmd/ && GOOS=linux go build -tags musl -o ../prometheusWriter main.goCMD ["/app/prometheusWriter"]FROM alpine:latestWORKDIR /appRUN sed -i s/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g /etc/apk/repositoriesRUN apk add tzdataRUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && echo "Asia/Shanghai" > /etc/timezoneCOPY --from=build /app/prometheusWriter /app/RUN chmod +x /app/prometheusWriterCOPY config.json /app/config.jsonCMD ["/app/prometheusWriter"]
+FROM golang:1.16.8-alpine3.14 as build
+WORKDIR /app
+RUN apk add git && apk add librdkafka-dev pkgconf && apk add build-base && apk add alpine-sdk
+ENV http_proxy= GO111MODULE=on GOPROXY=https://goproxy.cn,direct GOPRIVATE=*.weimob.com
+
+COPY go.mod .
+COPY go.sum .
+COPY . .
+
+RUN cd cmd/ && GOOS=linux go build -tags musl -o ../prometheusWriter main.go
+
+CMD ["/app/prometheusWriter"]
+
+FROM alpine:latest
+WORKDIR /app
+RUN sed -i s/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g /etc/apk/repositories
+RUN apk add tzdata
+RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && echo "Asia/Shanghai" > /etc/timezone
+COPY --from=build /app/prometheusWriter /app/
+RUN chmod +x /app/prometheusWriter
+COPY config.json /app/config.json
+CMD ["/app/prometheusWriter"]
 ```
+
+### 
 
 ### 支持Exemplar
 
