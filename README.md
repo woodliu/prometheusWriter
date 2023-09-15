@@ -95,7 +95,7 @@ RUN apk add git && apk add librdkafka-dev pkgconf && apk add build-base && apk a
 FROM golang:1.16.8-alpine3.14 as build
 WORKDIR /app
 RUN apk add git && apk add librdkafka-dev pkgconf && apk add build-base && apk add alpine-sdk
-ENV http_proxy= GO111MODULE=on GOPROXY=https://goproxy.cn,direct GOPRIVATE=*.weimob.com
+ENV http_proxy= GO111MODULE=on GOPROXY=https://goproxy.cn,direct 
 
 COPY go.mod .
 COPY go.sum .
